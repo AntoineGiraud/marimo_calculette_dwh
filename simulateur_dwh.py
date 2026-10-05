@@ -32,7 +32,13 @@ def _(mo):
         value="Toutes les 30 min",
         label="Fréquence des requêtes",
     )
-    return frequence, plage_horaire, volume_gb
+    scan_pct = mo.ui.slider(
+        start=1, stop=100, value=10, step=1, label="% de données scannées par requête"
+    )
+    speed_sec_per_10gb = mo.ui.slider(
+        start=0.1, stop=10.0, value=2.0, step=0.1, label="Vitesse (secondes par 10 Go)"
+    )
+    return frequence, plage_horaire, scan_pct, speed_sec_per_10gb, volume_gb
 
 
 @app.cell(hide_code=True)
@@ -85,14 +91,13 @@ def _():
         hourly_rate: float = 0.0
         min_billing_seconds_per_query: int = 0
         free_hours_per_month: float = 0.0
+        seconds_per_10gb: float = 2.0
 
         def calculate_compute_cost(self, w: Workload) -> float:
             if w.is_continuous:
                 daily_billed_hours = w.plage_horaire
             else:
-                # Hypothèse : 2 secondes de traitement par 10 Go de données
-                raw_duration_s = max(1.0, (w.volume_gb / 10.0) * 2.0)
-                # Application de la pénalité de déclenchement (ex: 60s pour Snowflake)
+                raw_duration_s = max(0.1, (w.volume_gb / 10.0) * self.seconds_per_10gb)
                 billed_duration_s = max(
                     raw_duration_s, float(self.min_billing_seconds_per_query)
                 )
@@ -100,7 +105,6 @@ def _():
                 daily_billed_s = w.queries_per_day * billed_duration_s
                 daily_billed_hours = daily_billed_s / 3600.0
 
-            # Plafond : un moteur ne peut pas tourner plus d'heures qu'il n'y en a dans la journée
             daily_billed_hours = min(daily_billed_hours, float(w.plage_horaire))
             monthly_billed_hours = daily_billed_hours * w.days_in_month
 
@@ -112,7 +116,6 @@ def _():
         hourly_rate: float = 0.0
 
         def calculate_compute_cost(self, w: Workload) -> float:
-            # Pour être "fair", on allume et on paie le serveur uniquement sur la plage horaire définie
             uptime_hours_per_month = w.plage_horaire * w.days_in_month
             return uptime_hours_per_month * self.hourly_rate
 
@@ -135,12 +138,16 @@ def _(
     pl,
     plage_horaire,
     px,
+    scan_pct,
+    speed_sec_per_10gb,
     volume_gb,
 ):
     freq_val = frequence.value
     ph_val = plage_horaire.value
+    scan_ratio = scan_pct.value / 100.0
+    speed_val = speed_sec_per_10gb.value
 
-    # --- 1. Constitution du Workload (Agnostique) ---
+    # --- 1. Constitution du Workload ---
     if freq_val == "1x/jour":
         queries_per_day = 1
     elif freq_val == "Toutes les heures":
@@ -160,39 +167,45 @@ def _(
         is_continuous=(freq_val == "En continu / Live"),
     )
 
-    # --- 2. Initialisation des Moteurs (Encapsulation Parfaite) ---
+    # --- 2. Initialisation des Moteurs avec Paramètres Dynamiques ---
     engines = [
-        # La Base Fixe (Éteinte la nuit pour être fair)
         ProvisionedComputeEngine(
             name="RDS PostgreSQL (On/Off)", hourly_rate=(30.0 / 730.0)
         ),
-        # Les Moteurs au Scan
         GbScanComputeEngine(
-            name="Amazon Athena", price_per_tb_scanned=5.0, scan_optimization_pct=0.10
+            name="Amazon Athena",
+            price_per_tb_scanned=5.0,
+            scan_optimization_pct=scan_ratio,
         ),
         GbScanComputeEngine(
             name="Google BigQuery",
             price_per_tb_scanned=6.25,
-            scan_optimization_pct=0.10,
+            scan_optimization_pct=scan_ratio,
             free_tb_per_month=1.0,
         ),
-        # Les Moteurs au temps de Calcul (avec pénalité de 60s)
         HourlyComputeEngine(
-            name="Snowflake (XS)", hourly_rate=2.60, min_billing_seconds_per_query=60
+            name="Snowflake (XS)",
+            hourly_rate=2.60,
+            min_billing_seconds_per_query=60,
+            seconds_per_10gb=speed_val,
         ),
         HourlyComputeEngine(
             name="Redshift Serverless",
             hourly_rate=2.88,
             min_billing_seconds_per_query=60,
+            seconds_per_10gb=speed_val,
         ),
         HourlyComputeEngine(
             name="Microsoft Fabric (F2)",
             hourly_rate=0.36,
             min_billing_seconds_per_query=60,
+            seconds_per_10gb=speed_val,
         ),
-        # Les Moteurs au temps de Calcul (Paiement à la seconde pure)
         HourlyComputeEngine(
-            name="ClickHouse Cloud", hourly_rate=0.35, min_billing_seconds_per_query=0
+            name="ClickHouse Cloud",
+            hourly_rate=0.35,
+            min_billing_seconds_per_query=0,
+            seconds_per_10gb=speed_val,
         ),
         HourlyComputeEngine(
             name="MotherDuck",
@@ -200,6 +213,7 @@ def _(
             min_billing_seconds_per_query=0,
             free_hours_per_month=10.0,
             free_storage_gb=10.0,
+            seconds_per_10gb=speed_val,
         ),
     ]
 
@@ -227,27 +241,43 @@ def _(
         yaxis_title="",
     )
     fig.update_traces(textposition="outside")
-
-    mo.md("")
+    mo.md('')
     return (fig,)
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    # 📊 Simulateur choix DWH // 3 Classes Mères
+    # 📊 Simulateur choix DWH
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _(fig, frequence, mo, plage_horaire, volume_gb):
+def _(
+    fig,
+    frequence,
+    mo,
+    plage_horaire,
+    scan_pct,
+    speed_sec_per_10gb,
+    volume_gb,
+):
     mo.vstack(
         [
             mo.hstack(
                 [
                     mo.vstack(
-                        [mo.md("### ⚙️ Paramètres"), volume_gb, plage_horaire, frequence]
+                        [
+                            mo.md("### ⚙️ Paramètres de charge"),
+                            volume_gb,
+                            plage_horaire,
+                            frequence,
+                            mo.md("---"),
+                            mo.md("### 🔧 Hypothèses Moteurs"),
+                            scan_pct,
+                            speed_sec_per_10gb,
+                        ]
                     ),
                     mo.ui.plotly(fig),
                 ],
@@ -262,22 +292,25 @@ def _(fig, frequence, mo, plage_horaire, volume_gb):
 def _(mo):
     mo.md(r"""
     ---
-    ### 📖 Récapitulatif de la Modélisation Orientée Objet
+    ### 📖 Récapitulatif des Classes Mères & Liens Officiels
 
-    Le code a été simplifié autour de 3 grandes familles de facturation héritant toutes du stockage de base (23 € / To) :
+    *Le stockage est uniformisé à ~23 € / To / mois pour tous les acteurs.*
 
-    **1. `GbScanComputeEngine` (Facturation au Scan)**
-    *   **Comportement :** Coût = *Volume total x 10% (Opti Parquet) x Prix au To scanné*.
-    *   **Les moteurs :** Amazon Athena (5$/To) et Google BigQuery (6.25$/To avec 1 To offert).
+    #### `GbScanComputeEngine` (Facturation au Scan)
+    *   **Amazon Athena :** [Voir la grille tarifaire](https://aws.amazon.com/athena/pricing/)
+    *   **Google BigQuery :** 1er Téraoctet scanné gratuit/mois. [Voir la grille tarifaire](https://cloud.google.com/bigquery/pricing)
 
-    **2. `HourlyComputeEngine` (Facturation au temps d'éveil)**
-    *   **Comportement (La Règle des 2s) :** On estime le calcul d'une requête BI moyenne à **2 secondes par tranche de 10 Go** de données.
-    *   **La pénalité (Le minimum facturable) :** Certains moteurs facturent un minimum de **60 secondes** à chaque réveil (Snowflake, Redshift, Fabric). S'ils sont appelés trop souvent, ils n'arrivent plus à s'éteindre et la facture explose. D'autres facturent à la seconde près (MotherDuck, ClickHouse).
-    *   **Les moteurs :** Snowflake (2.60€/h), Redshift (2.88€/h), Fabric (0.36€/h), ClickHouse (0.35€/h) et MotherDuck (0.73€/h avec 10h et 10Go offerts).
+    #### `HourlyComputeEngine` (Facturation au temps d'éveil)
+    *   **Snowflake (XS) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://www.snowflake.com/en/data-cloud/pricing-options/)
+    *   **Amazon Redshift Serverless :** Pénalité de 60s minimum par requête (Plancher 8 RPU). [Voir la grille tarifaire](https://aws.amazon.com/redshift/pricing/)
+    *   **Microsoft Fabric (F2) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://azure.microsoft.com/en-us/pricing/details/microsoft-fabric/)
+    *   **ClickHouse Cloud :** Analytique temps-réel pur, facturé à la seconde. [Voir la grille tarifaire](https://clickhouse.com/pricing)
+    *   **MotherDuck :** Facturé à la seconde. Free Tier de 10h Compute & 10Go Storage. [Voir la grille tarifaire](https://motherduck.com/pricing/)
 
-    **3. `ProvisionedComputeEngine` (Facturation au serveur allumé)**
-    *   **Comportement (Le mode "Fair") :** Au lieu de facturer RDS 24h/24 comme avant, on présume qu'un script l'allume et l'éteint tous les jours selon la `Plage horaire` définie, pour être à armes égales avec le Serverless.
-    *   **Le moteur :** RDS PostgreSQL (Tarif de base ~30€ ramené à un taux horaire).
+    #### `ProvisionedComputeEngine` (Facturation au serveur allumé)
+    *   **RDS PostgreSQL (On/Off) :** Allumé sur la plage horaire définie. [Voir la grille tarifaire](https://aws.amazon.com/rds/postgresql/pricing/)
+
+    Non inclu : 🎫 ticket d'entrée (ex: MotherDuck 250$ /mois 10 user, ClickHouse 53$ /mois)
     """)
     return
 
