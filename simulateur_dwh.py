@@ -6,11 +6,11 @@ app = marimo.App(width="full")
 
 @app.cell(hide_code=True)
 def _():
+    import altair as alt
     import marimo as mo
     import pandas as pd
-    import plotly.express as px
 
-    return mo, pd, px
+    return alt, mo, pd
 
 
 @app.cell(hide_code=True)
@@ -133,11 +133,11 @@ def _(
     HourlyComputeEngine,
     ProvisionedComputeEngine,
     Workload,
+    alt,
     frequence,
     mo,
     pd,
     plage_horaire,
-    px,
     scan_pct,
     speed_sec_per_10gb,
     volume_gb,
@@ -221,28 +221,60 @@ def _(
     moteurs = [e.name for e in engines]
     couts = [e.calculate_total_cost(workload) for e in engines]
 
-    df = pd.DataFrame({"Moteur": moteurs, "Coût Mensuel (€)": couts})
+    data = [{"Moteur": m, "Coût Mensuel (€)": c} for m, c in zip(moteurs, couts)]
+    # 1. On trie notre liste de dictionnaires en Python selon le coût
+    data = sorted(data, key=lambda x: x["Coût Mensuel (€)"])
+    moteurs_tries = [d["Moteur"] for d in data]
 
-    fig = px.bar(
-        df,
-        x="Coût Mensuel (€)",
-        y="Moteur",
-        orientation="h",
-        color="Moteur",
-        text_auto=".2f",
-        title=f"Estimation ({volume_gb.value} Go, {ph_val}h/j, {freq_val})",
-        color_discrete_sequence=px.colors.qualitative.Pastel,
+    # 🎨 Personnalisation de la charte graphique
+    domain = {
+        "RDS PostgreSQL (On/Off)": "#FFC400",  #
+        "Amazon Athena": "#FF9900",
+        "Google BigQuery": "#1565C0",
+        "Snowflake (XS)": "#29B5E8",
+        "Redshift Serverless": "#FF7300",
+        "Microsoft Fabric (F2)": "#48C561",
+        "ClickHouse Cloud": "#000000",
+        "MotherDuck": "#FFF200",
+    }
+    color_scale = alt.Scale(domain=domain.keys(), range=domain.values())
+
+    # Utilisation de Altair avec la nouvelle palette
+    base = alt.Chart(alt.Data(values=data)).encode(
+        x=alt.X("Coût Mensuel (€):Q", title="Coût Mensuel (€)"),
+        y=alt.Y("Moteur:N", sort=moteurs_tries, title=""),
     )
 
-    fig.update_layout(
-        yaxis={"categoryorder": "total descending"},
-        showlegend=False,
-        xaxis_title="Coût Mensuel (€)",
-        yaxis_title="",
+    bars = base.mark_bar().encode(
+        color=alt.Color("Moteur:N", scale=color_scale, legend=None)
     )
-    fig.update_traces(textposition="outside")
-    mo.md("")
-    return (fig,)
+
+    text = base.mark_text(
+        align="left", baseline="middle", dx=3, color="#333333"
+    ).encode(text=alt.Text("Coût Mensuel (€):Q", format=".2f"))
+
+    chart = (bars + text).properties(
+        title=alt.TitleParams(
+            text=f"Estimation ({volume_gb.value} Go, {ph_val}h/j, {freq_val})",
+            anchor="start",
+            dx=10,
+        ),
+        width="container",
+        height=400,
+    )
+
+    return (
+        bars,
+        base,
+        chart,
+        couts,
+        engines,
+        moteurs,
+        scan_ratio,
+        speed_val,
+        text,
+        workload,
+    )
 
 
 @app.cell(hide_code=True)
@@ -254,15 +286,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(
-    fig,
-    frequence,
-    mo,
-    plage_horaire,
-    scan_pct,
-    speed_sec_per_10gb,
-    volume_gb,
-):
+def _(chart, frequence, mo, plage_horaire, scan_pct, speed_sec_per_10gb, volume_gb):
     mo.vstack(
         [
             mo.hstack(
@@ -279,7 +303,7 @@ def _(
                             speed_sec_per_10gb,
                         ]
                     ),
-                    mo.ui.plotly(fig),
+                    mo.ui.altair_chart(chart),
                 ],
                 widths=[1, 3],
             ),
