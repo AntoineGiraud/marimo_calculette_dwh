@@ -8,8 +8,9 @@ app = marimo.App(width="full")
 def _():
     import marimo as mo
     import plotly.express as px
+    import polars as pl
 
-    return mo, px
+    return mo, px, pl
 
 
 @app.cell(hide_code=True)
@@ -35,7 +36,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(frequence, mo, plage_horaire, px, volume_gb):
+def _(frequence, mo, plage_horaire, px, volume_gb, pl):
     days_in_month = 30
     storage_price_per_tb = 23  # € / To
     volume_tb = volume_gb.value / 1000.0
@@ -101,10 +102,10 @@ def _(frequence, mo, plage_horaire, px, volume_gb):
         motherduck_cost,
     ]
 
-    data = {"Moteur": moteurs, "Coût Mensuel (€)": couts}
+    df = pl.DataFrame({"Moteur": moteurs, "Coût Mensuel (€)": couts})
 
     fig = px.bar(
-        data,
+        df,  # <-- On passe le dataframe Polars ici
         x="Coût Mensuel (€)",
         y="Moteur",
         orientation="h",
@@ -122,7 +123,7 @@ def _(frequence, mo, plage_horaire, px, volume_gb):
     )
     fig.update_traces(textposition="outside")
 
-    mo.md('')
+    mo.md("")
     return (fig,)
 
 
@@ -140,13 +141,35 @@ def _(fig, frequence, mo, plage_horaire, volume_gb):
         [
             mo.hstack(
                 [
-                    mo.vstack([mo.md("### ⚙️ Paramètres"), volume_gb, plage_horaire, frequence]),
+                    mo.vstack(
+                        [mo.md("### ⚙️ Paramètres"), volume_gb, plage_horaire, frequence]
+                    ),
                     mo.ui.plotly(fig),
                 ],
                 widths=[1, 3],
             ),
         ]
     )
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ---
+    ### 📖 Récapitulatif des Hypothèses & Liens Officiels
+
+    *Le stockage est uniformisé à ~23 € / To / mois pour tous les acteurs.*
+
+    *   **Amazon RDS for PostgreSQL :** Serveur classique H24 (~30 €/mois de base). Facturation fixe indépendante de la charge analytique. [Pricing RDS](https://aws.amazon.com/rds/postgresql/pricing/)
+    *   **Amazon Athena :** 100% Serverless (~5,00 $/To scanné). Le modèle simule une optimisation Parquet limitant le scan à 10% du volume total par requête. [Pricing Athena](https://aws.amazon.com/athena/pricing/)
+    *   **Google BigQuery :** Serverless au scan (~6,25 $/To scanné). Le **1er Téraoctet scanné chaque mois est gratuit**. [Pricing BigQuery](https://cloud.google.com/bigquery/pricing)
+    *   **Snowflake (XS) :** Entrepôt premium (~2,60 €/h). Chaque requête réveille le moteur pour un minimum de 60 secondes. [Pricing Snowflake](https://www.snowflake.com/en/data-cloud/pricing-options/)
+    *   **Amazon Redshift Serverless :** Moteur premium AWS (~2,88 €/h pour le plancher à 8 RPU). Mécanique de réveil identique à Snowflake. [Pricing Redshift](https://aws.amazon.com/redshift/pricing/)
+    *   **Microsoft Fabric (F2) :** Data Warehouse Azure (~0.36 €/h). Modèle de capacité avec mise en veille automatique, idéal pour démarrer petit. [Pricing Fabric](https://azure.microsoft.com/en-us/pricing/details/microsoft-fabric/)
+    *   **ClickHouse Cloud :** Analytique temps-réel (~0,35 €/h). Conçu pour encaisser des flux continus sans faire exploser la facture horaire. [Pricing ClickHouse](https://clickhouse.com/pricing)
+    *   **MotherDuck :** Hybride local/cloud propulsé par DuckDB. Free tier très généreux pour les petits volumes (<10 Go), puis rampe tarifaire douce. [Pricing MotherDuck](https://motherduck.com/pricing/)
+    """)
     return
 
 
