@@ -7,4 +7,5 @@ requires-python = ">=3.14"
 dependencies = [
     "marimo[sql]>=0.25.1",
     "plotly[express]>=7.1.0",
+    "pandas>=2.0.0",
 ]

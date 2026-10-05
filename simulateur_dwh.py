@@ -7,10 +7,10 @@ app = marimo.App(width="full")
 @app.cell(hide_code=True)
 def _():
     import marimo as mo
+    import pandas as pd
     import plotly.express as px
-    import polars as pl
 
-    return mo, pl, px
+    return mo, pd, px
 
 
 @app.cell(hide_code=True)
@@ -135,7 +135,7 @@ def _(
     Workload,
     frequence,
     mo,
-    pl,
+    pd,
     plage_horaire,
     px,
     scan_pct,
@@ -221,7 +221,7 @@ def _(
     moteurs = [e.name for e in engines]
     couts = [e.calculate_total_cost(workload) for e in engines]
 
-    df = pl.DataFrame({"Moteur": moteurs, "Coût Mensuel (€)": couts})
+    df = pd.DataFrame({"Moteur": moteurs, "Coût Mensuel (€)": couts})
 
     fig = px.bar(
         df,
@@ -241,7 +241,7 @@ def _(
         yaxis_title="",
     )
     fig.update_traces(textposition="outside")
-    mo.md('')
+    mo.md("")
     return (fig,)
 
 
