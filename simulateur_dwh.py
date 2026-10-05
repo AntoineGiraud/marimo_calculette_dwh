@@ -10,7 +10,7 @@ def _():
     import marimo as mo
     import pandas as pd
 
-    return alt, mo, pd
+    return alt, mo
 
 
 @app.cell(hide_code=True)
@@ -135,8 +135,6 @@ def _(
     Workload,
     alt,
     frequence,
-    mo,
-    pd,
     plage_horaire,
     scan_pct,
     speed_sec_per_10gb,
@@ -262,19 +260,7 @@ def _(
         width="container",
         height=400,
     )
-
-    return (
-        bars,
-        base,
-        chart,
-        couts,
-        engines,
-        moteurs,
-        scan_ratio,
-        speed_val,
-        text,
-        workload,
-    )
+    return (chart,)
 
 
 @app.cell(hide_code=True)
@@ -286,7 +272,15 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(chart, frequence, mo, plage_horaire, scan_pct, speed_sec_per_10gb, volume_gb):
+def _(
+    chart,
+    frequence,
+    mo,
+    plage_horaire,
+    scan_pct,
+    speed_sec_per_10gb,
+    volume_gb,
+):
     mo.vstack(
         [
             mo.hstack(
@@ -314,28 +308,51 @@ def _(chart, frequence, mo, plage_horaire, scan_pct, speed_sec_per_10gb, volume_
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""
+    _recap_moteurs = r"""
     ---
     ### 📖 Récapitulatif des Classes Mères & Liens Officiels
 
     *Le stockage est uniformisé à ~23 € / To / mois pour tous les acteurs.*
 
     #### `GbScanComputeEngine` (Facturation au Scan)
-    *   **Amazon Athena :** [Voir la grille tarifaire](https://aws.amazon.com/athena/pricing/)
-    *   **Google BigQuery :** 1er Téraoctet scanné gratuit/mois. [Voir la grille tarifaire](https://cloud.google.com/bigquery/pricing)
+    - **Amazon Athena :** [Voir la grille tarifaire](https://aws.amazon.com/athena/pricing/)
+    - **Google BigQuery :** 1er Téraoctet scanné gratuit/mois. [Voir la grille tarifaire](https://cloud.google.com/bigquery/pricing)
 
     #### `HourlyComputeEngine` (Facturation au temps d'éveil)
-    *   **Snowflake (XS) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://www.snowflake.com/en/data-cloud/pricing-options/)
-    *   **Amazon Redshift Serverless :** Pénalité de 60s minimum par requête (Plancher 8 RPU). [Voir la grille tarifaire](https://aws.amazon.com/redshift/pricing/)
-    *   **Microsoft Fabric (F2) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://azure.microsoft.com/en-us/pricing/details/microsoft-fabric/)
-    *   **ClickHouse Cloud :** Analytique temps-réel pur, facturé à la seconde. [Voir la grille tarifaire](https://clickhouse.com/pricing)
-    *   **MotherDuck :** Facturé à la seconde. Free Tier de 10h Compute & 10Go Storage. [Voir la grille tarifaire](https://motherduck.com/pricing/)
+    - **Snowflake (XS) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://www.snowflake.com/en/data-cloud/pricing-options/)
+    - **Amazon Redshift Serverless :** Pénalité de 60s minimum par requête (Plancher 8 RPU). [Voir la grille tarifaire](https://aws.amazon.com/redshift/pricing/)
+    - **Microsoft Fabric (F2) :** Pénalité de 60s minimum par requête. [Voir la grille tarifaire](https://azure.microsoft.com/en-us/pricing/details/microsoft-fabric/)
+    - **ClickHouse Cloud :** Analytique temps-réel pur, facturé à la seconde. [Voir la grille tarifaire](https://clickhouse.com/pricing)
+    - **MotherDuck :** Facturé à la seconde. Free Tier de 10h Compute & 10Go Storage. [Voir la grille tarifaire](https://motherduck.com/pricing/)
 
     #### `ProvisionedComputeEngine` (Facturation au serveur allumé)
-    *   **RDS PostgreSQL (On/Off) :** Allumé sur la plage horaire définie. [Voir la grille tarifaire](https://aws.amazon.com/rds/postgresql/pricing/)
+    - **RDS PostgreSQL (On/Off) :** Allumé sur la plage horaire définie. [Voir la grille tarifaire](https://aws.amazon.com/rds/postgresql/pricing/)
+    """
 
-    Non inclu : 🎫 ticket d'entrée (ex: MotherDuck 250$ /mois 10 user, ClickHouse 53$ /mois)
-    """)
+    _recap_limitations = r"""
+    ---
+    ### 🛑 Limites de ce notebook / modèle
+
+    Afin de garder le simulateur lisible et concentré sur la tarification à l'usage, des éléments majeurs ont été volontairement exclus des calculs :
+
+    1. **Les tickets d'entrée (Frais fixes d'abonnement) 🎫 :** Le graphique calcule la consommation pure (Compute & Storage). Il n'inclut pas les forfaits mensuels minimums requis par certains éditeurs pour accéder à un environnement de production multi-utilisateurs
+
+    2. **Les performances réelles des moteurs ⚡ :** Le simulateur applique par défaut la même vitesse de traitement théorique (ex: 2s / 10 Go) à tous les moteurs. Dans la réalité, l'architecture interne change tout.    *MotherDuck (propulsé par DuckDB) ou ClickHouse sont réputés dans les benchmarks pour leur vélocité     👉️ [ClickBench — a Benchmark For Analytical DBMS](https://benchmark.clickhouse.com/)*
+
+    3. **La concurrence et le nombre d'utilisateurs 👥 :** Le paramètre "Fréquence des requêtes" simule un flux linéaire. Il ne modélise pas l'impact de dizaines ou milliers d'utilisateurs simultanés (concurrency). Sans un cache agressif au niveau de l'outil BI, une forte concurrence modifie drastiquement le comportement des systèmes :
+        - *Sur les **moteurs au scan** (Athena, BigQuery)* : 1000 utilisateurs = 1000 fois plus de scans = la facture explose.
+        - *Sur les **moteurs provisionnés** (RDS)* : Le prix reste fixe, mais le serveur risque l'engorgement ou le crash.
+        - *Sur les **moteurs à l'heure** (Snowflake, ClickHouse)* : Il faudra instancier des clusters plus gros (Scale-up/out) pour absorber la charge, ce qui augmentera le taux horaire de base.
+    """
+
+    # ⚠️ CORRECTION : on stocke le layout, on aligne en haut ("start"), et SURTOUT on le retourne !
+    mo.hstack(
+        [mo.md(_recap_moteurs), mo.md(_recap_limitations)],
+        justify="start",
+        align="start",  # Aligne les deux blocs de texte par le haut
+        widths="equal",  # Répartit l'espace 50% / 50%
+        gap="2rem",
+    )
     return
 
 
