@@ -1,7 +1,7 @@
 [project]
 name = "calculette-dwh"
 version = "0.1.0"
-description = "Add your description here"
+description = "comparer visuellement les coûts de différentes architectures de bases de données analytiques"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
