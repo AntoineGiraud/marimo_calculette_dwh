@@ -4,6 +4,8 @@ Ce projet est un carnet interactif propulsé par [Marimo](https://marimo.io/) et
 
 Il permet de comparer visuellement les coûts de différentes architectures de bases de données analytiques selon des paramètres de charge personnalisables.
 
+![capture_marimo](./capture_marimo.png)
+
 ## ⚠️ Avertissement : Introduction & Sensibilisation
 
 Ce simulateur a été conçu comme un **outil pédagogique d'introduction et de sensibilisation**. Son objectif premier est d'aider à comprendre les grandes mécaniques de dimensionnement et les philosophies de facturation des outils analytiques du marché.
