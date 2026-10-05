@@ -30,7 +30,7 @@ jobs:
 
       - name: 📄 Export notebook (App Mode)
         # Changement majeur ici : --mode run au lieu de --mode edit
-        run: uv run marimo export html-wasm simulateur_bi.py -o www --mode run
+        run: uv run marimo export html-wasm simulateur_dwh.py -o www --mode run
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
